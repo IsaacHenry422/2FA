@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2FA Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            padding: 50px;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 300px;
+            margin: auto;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        .error { color: red; }
+        .success { color: green; }
+        #qr-section, #verify-section, #login-success { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>2FA Authentication</h1>
+
+        <div id="register-section">
+            <h2>Register</h2>
+            <input type="text" id="register-username" placeholder="Username">
+            <button id="register-btn">Register</button>
+            <p id="register-result"></p>
+        </div>
+
+        <div id="login-section">
+            <h2>Login</h2>
+            <input type="text" id="login-username" placeholder="Username">
+            <button id="login-btn">Login</button>
+            <p id="login-result"></p>
+        </div>
+
+        <div id="qr-section">
+            <h2>Scan QR Code</h2>
+            <img id="qr-code" src="" alt="QR Code" width="200" height="200">
+            <p>Use Google Authenticator or a similar app to scan the QR code.</p>
+        </div>
+
+        <div id="verify-section">
+            <h2>Verify 2FA Token</h2>
+            <input type="password" id="token" placeholder="Enter 2FA token">
+            <button id="verify-btn">Verify</button>
+            <p id="verify-result"></p>
+        </div>
+
+        <div id="login-success">
+            <h2 class="success">Login Successful!</h2>
+            <button id="back-btn" style="display: none;">Back to Home</button>
+        </div>
+    </div>
+
+    <script>
+        // Dynamically set API Base URL (local or deployed)
+        const API_BASE_URL = window.location.hostname === "localhost" 
+            ? "http://localhost:3000" 
+            : "https://your-backend.vercel.app";
+
+        const registerBtn = document.getElementById('register-btn');
+        const loginBtn = document.getElementById('login-btn');
+        const verifyBtn = document.getElementById('verify-btn');
+
+        const registerResult = document.getElementById('register-result');
+        const loginResult = document.getElementById('login-result');
+        const verifyResult = document.getElementById('verify-result');
+
+        const qrCodeImg = document.getElementById('qr-code');
+        let currentUser = null;
+
+        // Register User
+        registerBtn.addEventListener('click', () => {
+            const username = document.getElementById('register-username').value.trim();
+            if (!username) {
+                registerResult.textContent = "Enter username.";
+                registerResult.className = "error";
+                return;
+            }
+
+            fetch(`${API_BASE_URL}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            })
+            .then(res => res.json())
+            .then(data => {
+                registerResult.textContent = data.message;
+                registerResult.className = data.success ? 'success' : 'error';
+                if (data.success) {
+                    currentUser = username;
+
+                    fetch(`${API_BASE_URL}/qr?user=${currentUser}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            qrCodeImg.src = data.qrCode;
+
+                            // Hide Register & Login, Show QR + Verify
+                            document.getElementById('register-section').style.display = 'none';
+                            document.getElementById('login-section').style.display = 'none';
+                            document.getElementById('qr-section').style.display = 'block';
+                            document.getElementById('verify-section').style.display = 'block';
+                        })
+                        .catch(() => {
+                            registerResult.textContent = "Failed to fetch QR Code.";
+                            registerResult.className = "error";
+                        });
+                }
+            })
+            .catch(() => {
+                registerResult.textContent = "Registration failed. Try again.";
+                registerResult.className = "error";
+            });
+        });
+
+        // Login User
+        loginBtn.addEventListener('click', () => {
+            const username = document.getElementById('login-username').value.trim();
+            if (!username) {
+                loginResult.textContent = "Enter username.";
+                loginResult.className = "error";
+                return;
+            }
+
+            fetch(`${API_BASE_URL}/qr?user=${username}`)
+                .then(res => res.json())
+                .then(data => {
+                    currentUser = username;
+                    qrCodeImg.src = data.qrCode;
+
+                    // Hide Register & Login, Show QR + Verify
+                    document.getElementById('register-section').style.display = 'none';
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('qr-section').style.display = 'block';
+                    document.getElementById('verify-section').style.display = 'block';
+                })
+                .catch(() => {
+                    loginResult.textContent = 'User not found or QR error.';
+                    loginResult.className = 'error';
+                });
+        });
+
+        // Reset
+        document.getElementById('back-btn').addEventListener('click', () => {
+            location.reload();
+        });
+
+        // Verify 2FA Token
+        verifyBtn.addEventListener('click', () => {
+            const token = document.getElementById('token').value.trim();
+            if (!token) {
+                verifyResult.textContent = "Enter token.";
+                verifyResult.className = "error";
+                return;
+            }
+
+            fetch(`${API_BASE_URL}/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: currentUser, token })
+            })
+            .then(res => res.json())
+            .then(data => {
+                verifyResult.textContent = data.message || (data.verified ? 'Login successful.' : 'Verification failed.');
+                verifyResult.className = data.verified ? 'success' : 'error';
+
+                if (data.verified) {
+                    // Hide QR Code & Verify Section
+                    document.getElementById('qr-section').style.display = 'none';
+                    document.getElementById('verify-section').style.display = 'none';
+
+                    // Show Login Success Message
+                    document.getElementById('login-success').style.display = 'block';
+                    document.getElementById('back-btn').style.display = 'block';
+                }
+            })
+            .catch(() => {
+                verifyResult.textContent = "Verification failed. Try again.";
+                verifyResult.className = "error";
+            });
+        });
+    </script>
+</body>
+</html>
